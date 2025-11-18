@@ -236,6 +236,47 @@ class TestDeidentifyCSV(unittest.TestCase):
         self.assertEqual(len(rows), 3)
         self.assertEqual(list(rows[0].keys()), ['id', 'name', 'zipcode', 'work_zip'])
 
+    def test_csv_digit_column_name(self):
+        """Test CSV with digit-only column names (e.g., year columns like '2023')"""
+        # Create test file with digit column names
+        test_file = self.test_dir / 'test_digit_columns.csv'
+        test_out = self.test_dir / 'test_digit_out.csv'
+
+        with open(test_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['id', '2023', '2024'])
+            writer.writerow(['1', '12345', '90210'])
+            writer.writerow(['2', '03601', '82101'])
+
+        # Test selecting digit column by name (should work now)
+        deidentify_csv(test_file, test_out, ['2023', '2024'], '3', '0')
+
+        with open(test_out, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        self.assertEqual(rows[0]['2023'], '12300')
+        self.assertEqual(rows[0]['2024'], '90200')
+        self.assertEqual(rows[1]['2023'], '03600')
+        self.assertEqual(rows[1]['2024'], '82100')
+
+        # Clean up
+        test_file.unlink()
+        test_out.unlink()
+
+    def test_csv_string_index_vs_name(self):
+        """Test that string indices ('0', '1') work as indices when no matching column name"""
+        # Using existing test file where column 2 is 'zipcode', column 3 is 'work_zip'
+        deidentify_csv(self.test_input, self.test_output, ['2', '3'], '3', 'X')
+
+        with open(self.test_output, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # Columns at index 2 and 3 should be deidentified
+        self.assertEqual(rows[0]['zipcode'], '123XX')
+        self.assertEqual(rows[0]['work_zip'], '902XX')
+
 
 class TestEdgeCases(unittest.TestCase):
     """Test edge cases and error handling"""

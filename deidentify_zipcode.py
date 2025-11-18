@@ -83,39 +83,46 @@ def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill
             raise ValueError("CSV file appears to be empty or malformed")
 
         # Determine which columns to deidentify
+        # Try to match column names first, then fall back to indices
         columns_to_process = []
         for col in zipcode_columns:
             if isinstance(col, int):
-                # Column index
+                # Explicit integer type - treat as index
                 if 0 <= col < len(reader.fieldnames):
                     columns_to_process.append(reader.fieldnames[col])
                 else:
                     print(f"Warning: Column index {col} out of range (max: {len(reader.fieldnames)-1})")
-            else:
-                # Column name
-                if col in reader.fieldnames:
-                    columns_to_process.append(col)
+            elif col in reader.fieldnames:
+                # String matches a column name - use it
+                columns_to_process.append(col)
+            elif col.isdigit():
+                # String of digits - try as index
+                idx = int(col)
+                if 0 <= idx < len(reader.fieldnames):
+                    columns_to_process.append(reader.fieldnames[idx])
                 else:
-                    print(f"Warning: Column '{col}' not found in CSV")
+                    print(f"Warning: Column index {idx} out of range (max: {len(reader.fieldnames)-1})")
+            else:
+                # String not found in headers
+                print(f"Warning: Column '{col}' not found in CSV")
 
         if not columns_to_process:
             raise ValueError("No valid ZIP code columns found")
 
-        # Process the CSV
-        rows = []
-        for row in reader:
-            for col in columns_to_process:
-                if col in row:
-                    row[col] = deidentify_zipcode(row[col], precision, fill_char)
-            rows.append(row)
-
-        # Write output
+        # Stream rows directly to output file to avoid loading all into memory
+        row_count = 0
         with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
             writer = csv.DictWriter(outfile, fieldnames=reader.fieldnames)
             writer.writeheader()
-            writer.writerows(rows)
 
-        print(f"Processed {len(rows)} rows")
+            for row in reader:
+                for col in columns_to_process:
+                    if col in row:
+                        row[col] = deidentify_zipcode(row[col], precision, fill_char)
+                writer.writerow(row)
+                row_count += 1
+
+        print(f"Processed {row_count} rows")
         print(f"Deidentified columns: {', '.join(columns_to_process)}")
         print(f"Precision: {precision}, Fill character: {fill_char}")
         print(f"Output saved to: {output_file}")
@@ -182,17 +189,10 @@ Examples:
         input_path = Path(args.input_file)
         args.output = input_path.parent / f"{input_path.stem}_deidentified{input_path.suffix}"
 
-    # Convert column indices if they're numbers
-    columns = []
-    for col in args.columns:
-        try:
-            columns.append(int(col))
-        except ValueError:
-            columns.append(col)
-
     # Process the CSV file
+    # Pass column arguments as-is; deidentify_csv will handle name vs. index resolution
     try:
-        deidentify_csv(args.input_file, args.output, columns, args.precision, args.fill)
+        deidentify_csv(args.input_file, args.output, args.columns, args.precision, args.fill)
     except Exception as e:
         parser.error(f"Error processing CSV: {e}")
 
