@@ -8,6 +8,7 @@ Run with: python3 test_deidentify_zipcode.py
 import unittest
 import csv
 import os
+import tempfile
 from pathlib import Path
 from deidentify_zipcode import deidentify_zipcode, deidentify_csv, SPARSE_ZIP_PREFIXES
 
@@ -127,9 +128,10 @@ class TestDeidentifyCSV(unittest.TestCase):
     """Test cases for CSV file processing"""
 
     def setUp(self):
-        """Set up test fixtures"""
-        self.test_dir = Path('test_data')
-        self.test_dir.mkdir(exist_ok=True)
+        """Set up test fixtures with temporary directory"""
+        # Use tempfile.TemporaryDirectory for isolated, auto-cleanup test environment
+        self.temp_dir_obj = tempfile.TemporaryDirectory()
+        self.test_dir = Path(self.temp_dir_obj.name)
 
         # Create test CSV
         self.test_input = self.test_dir / 'test_input.csv'
@@ -144,12 +146,8 @@ class TestDeidentifyCSV(unittest.TestCase):
 
     def tearDown(self):
         """Clean up test files"""
-        if self.test_input.exists():
-            self.test_input.unlink()
-        if self.test_output.exists():
-            self.test_output.unlink()
-        if self.test_dir.exists():
-            self.test_dir.rmdir()
+        # Temporary directory and all contents are automatically cleaned up
+        self.temp_dir_obj.cleanup()
 
     def test_csv_single_column_default(self):
         """Test CSV processing with single column and default settings (smart mode)"""
@@ -286,16 +284,15 @@ class TestDelimiters(unittest.TestCase):
     """Test cases for different delimiter types"""
 
     def setUp(self):
-        """Set up test fixtures"""
-        self.test_dir = Path('test_data')
-        self.test_dir.mkdir(exist_ok=True)
+        """Set up test fixtures with temporary directory"""
+        # Use tempfile.TemporaryDirectory for isolated, auto-cleanup test environment
+        self.temp_dir_obj = tempfile.TemporaryDirectory()
+        self.test_dir = Path(self.temp_dir_obj.name)
 
     def tearDown(self):
         """Clean up test files"""
-        for file in self.test_dir.glob('*'):
-            file.unlink()
-        if self.test_dir.exists():
-            self.test_dir.rmdir()
+        # Temporary directory and all contents are automatically cleaned up
+        self.temp_dir_obj.cleanup()
 
     def test_tab_delimiter(self):
         """Test tab-separated files (TSV)"""
@@ -433,9 +430,11 @@ class TestRedaction(unittest.TestCase):
 
     def test_no_redaction_with_p2(self):
         """Test that -p 2 does NOT redact (2-digit is considered safe)"""
-        # 2-digit precision is currently allowed even for sparse ZIPs
+        # 2-digit precision is allowed even for sparse ZIPs
         self.assertEqual(deidentify_zipcode('03601', '2', '0'), '03000')
         self.assertEqual(deidentify_zipcode('82101', '2', 'X'), '82XXX')
+        self.assertEqual(deidentify_zipcode('12345', '2', '0'), '12000')
+        self.assertEqual(deidentify_zipcode('90210', '2', 'X'), '90XXX')
 
     def test_smart_mode_no_redaction(self):
         """Test that smart mode never redacts (it adjusts precision instead)"""
@@ -443,6 +442,35 @@ class TestRedaction(unittest.TestCase):
         self.assertEqual(deidentify_zipcode('03601', 'smart', '0'), '03000')
         self.assertEqual(deidentify_zipcode('82101', 'smart', 'X'), '82XXX')
         self.assertEqual(deidentify_zipcode('12345', 'smart', '0'), '12300')
+
+    def test_redaction_with_malformed_sparse_zip(self):
+        """Test redaction for malformed/truncated sparse ZIP codes with -p 3 (Issue #1)"""
+        # Edge case: ZIP codes with only 2 digits that could be sparse
+        # '03' could be prefix 036, 059 - should redact to be safe with -p 3
+        self.assertEqual(deidentify_zipcode('03', '3', '0'), 'REDACTED_HIPAA')
+
+        # '82' could be prefix 821, 823 - should redact to be safe
+        self.assertEqual(deidentify_zipcode('82', '3', 'X'), 'REDACTED_HIPAA')
+
+        # '89' could be prefix 893 - should redact to be safe
+        self.assertEqual(deidentify_zipcode('89', '3', '0'), 'REDACTED_HIPAA')
+
+        # '12' is not a sparse prefix - should process normally with -p 3
+        self.assertEqual(deidentify_zipcode('12', '3', '0'), '12000')
+
+    def test_no_redaction_with_malformed_normal_zip(self):
+        """Test that malformed normal ZIP codes are not over-redacted"""
+        # '90' doesn't match any sparse prefix - should not redact, just process
+        # With -p 3, keeps 2 digits (all it has), fills to 5 total (90000)
+        self.assertEqual(deidentify_zipcode('90', '3', '0'), '90000')
+        # With -p 2, keeps 2 digits, fills to 5 total (90000)
+        self.assertEqual(deidentify_zipcode('90', '2', '0'), '90000')
+
+    def test_p2_allows_malformed_sparse_zip(self):
+        """Test that -p 2 does not redact malformed sparse ZIPs (only -p 3 does)"""
+        # With -p 2, even potential sparse prefixes are processed normally
+        self.assertEqual(deidentify_zipcode('03', '2', '0'), '03000')
+        self.assertEqual(deidentify_zipcode('82', '2', 'X'), '82XXX')
 
 
 class TestEdgeCases(unittest.TestCase):

@@ -38,16 +38,17 @@ This will create `input_deidentified.csv` with ZIP codes converted from `12345` 
 ```bash
 # 2-digit precision
 python3 deidentify_zipcode.py input.csv -p 2
-# Result: 12345 → 12000
+# Result: 12345 → 12000, 03601 → 03000
 
 # 3-digit precision (may redact sparse areas)
 python3 deidentify_zipcode.py input.csv -p 3
 # Result: 12345 → 12300
 # Note: Sparse ZIPs like 03601 will be replaced with 'REDACTED_HIPAA' to avoid HIPAA violations
 
-# Smart mode (HIPAA-compliant, default)
+# Smart mode (HIPAA-compliant, default - never redacts)
 python3 deidentify_zipcode.py input.csv -p smart
 # Result: 12345 → 12300, but 03601 → 03000 (sparse area automatically gets 2-digit)
+# Smart mode adjusts precision instead of redacting, so no data loss
 ```
 
 ### Fill Character Options
@@ -247,18 +248,22 @@ python3 test_deidentify_zipcode.py
 
 ### Test Coverage
 
-The test suite includes 35 tests covering:
+The test suite includes 38 tests covering:
 - All precision modes (2-digit, 3-digit, smart)
 - Both fill characters (zeros and X's)
 - All 14 sparsely populated ZIP code prefixes
 - ZIP+4 format handling
 - **Delimiter support** (comma, tab, semicolon, pipe)
-- **Redaction behavior** for HIPAA Safe Harbor violations
+- **Redaction behavior** for HIPAA Safe Harbor violations:
+  - `-p 3` redacts sparse ZIP codes
+  - Smart mode never redacts (adjusts precision instead)
+  - Malformed/truncated ZIP codes with 2 digits (only with `-p 3`)
 - Custom redaction values
 - Edge cases (empty values, leading zeros, whitespace)
 - CSV file processing with single and multiple columns
 - Data integrity and structure preservation
 - Digit-only column names
+- Isolated test environments using temporary directories
 
 All tests pass successfully.
 

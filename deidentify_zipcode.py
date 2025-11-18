@@ -46,17 +46,23 @@ def deidentify_zipcode(zipcode, precision='smart', fill_char='0', redaction_valu
         return zipcode_str
 
     # Check for Safe Harbor violations in non-smart modes
-    if precision in ['2', '3'] and len(digits) >= 3:
-        prefix_3digit = digits[:3]
-        if prefix_3digit in SPARSE_ZIP_PREFIXES:
-            # Using fixed precision on sparse ZIP would violate Safe Harbor
-            if precision == '3':
+    if precision == '3' and len(digits) >= 2:
+        # Check if we have enough digits to determine sparse prefix
+        # For full 3-digit check, need at least 3 digits
+        if len(digits) >= 3:
+            prefix_3digit = digits[:3]
+            if prefix_3digit in SPARSE_ZIP_PREFIXES:
                 # 3-digit precision on sparse area reveals too much
                 return redaction_value
-            elif precision == '2':
-                # 2-digit might still be too revealing for very sparse areas
-                # For now, allow 2-digit but could be stricter
-                pass
+        else:
+            # For 2-digit inputs (edge case), check 2-digit prefix against known sparse prefixes
+            # to handle malformed/truncated ZIP codes
+            prefix_2digit = digits[:2]
+            # Check if any sparse prefix starts with these 2 digits
+            for sparse_prefix in SPARSE_ZIP_PREFIXES:
+                if sparse_prefix.startswith(prefix_2digit):
+                    # Potential sparse area - redact to be safe
+                    return redaction_value
 
     # Determine precision level
     if precision == 'smart':
