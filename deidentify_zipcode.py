@@ -19,7 +19,7 @@ SPARSE_ZIP_PREFIXES = {
 }
 
 
-def deidentify_zipcode(zipcode, precision='3', fill_char='0'):
+def deidentify_zipcode(zipcode, precision='smart', fill_char='0', redaction_value='REDACTED_HIPAA'):
     """
     Deidentify a ZIP code according to specified precision and fill character.
 
@@ -27,9 +27,10 @@ def deidentify_zipcode(zipcode, precision='3', fill_char='0'):
         zipcode: ZIP code as string or number (5-digit or ZIP+4 format)
         precision: '2', '3', or 'smart' for precision level
         fill_char: '0' or 'X' for fill character
+        redaction_value: Value to use when redacting for Safe Harbor compliance
 
     Returns:
-        Deidentified ZIP code string
+        Deidentified ZIP code string or redaction_value if would violate Safe Harbor
     """
     if not zipcode:
         return zipcode
@@ -43,6 +44,25 @@ def deidentify_zipcode(zipcode, precision='3', fill_char='0'):
     # If less than required digits, return as-is
     if len(digits) < 2:
         return zipcode_str
+
+    # Check for Safe Harbor violations in non-smart modes
+    if precision == '3' and len(digits) >= 2:
+        # Check if we have enough digits to determine sparse prefix
+        # For full 3-digit check, need at least 3 digits
+        if len(digits) >= 3:
+            prefix_3digit = digits[:3]
+            if prefix_3digit in SPARSE_ZIP_PREFIXES:
+                # 3-digit precision on sparse area reveals too much
+                return redaction_value
+        else:
+            # For 2-digit inputs (edge case), check 2-digit prefix against known sparse prefixes
+            # to handle malformed/truncated ZIP codes
+            prefix_2digit = digits[:2]
+            # Check if any sparse prefix starts with these 2 digits
+            for sparse_prefix in SPARSE_ZIP_PREFIXES:
+                if sparse_prefix.startswith(prefix_2digit):
+                    # Potential sparse area - redact to be safe
+                    return redaction_value
 
     # Determine precision level
     if precision == 'smart':
@@ -65,7 +85,7 @@ def deidentify_zipcode(zipcode, precision='3', fill_char='0'):
     return kept_digits + (fill_char * fill_count)
 
 
-def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill_char='0', delimiter=','):
+def deidentify_csv(input_file, output_file, zipcode_columns, precision='smart', fill_char='0', delimiter=',', redaction_value='REDACTED_HIPAA'):
     """
     Deidentify ZIP codes in a CSV file.
 
@@ -76,6 +96,7 @@ def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill
         precision: '2', '3', or 'smart' for precision level
         fill_char: '0' or 'X' for fill character
         delimiter: Delimiter character (default: ',')
+        redaction_value: Value to use when redacting for Safe Harbor compliance
     """
     with open(input_file, 'r', newline='', encoding='utf-8') as infile:
         reader = csv.DictReader(infile, delimiter=delimiter)
@@ -112,6 +133,7 @@ def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill
 
         # Stream rows directly to output file to avoid loading all into memory
         row_count = 0
+        redaction_count = 0
         with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
             writer = csv.DictWriter(outfile, fieldnames=reader.fieldnames, delimiter=delimiter)
             writer.writeheader()
@@ -119,13 +141,18 @@ def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill
             for row in reader:
                 for col in columns_to_process:
                     if col in row:
-                        row[col] = deidentify_zipcode(row[col], precision, fill_char)
+                        deidentified = deidentify_zipcode(row[col], precision, fill_char, redaction_value)
+                        if deidentified == redaction_value:
+                            redaction_count += 1
+                        row[col] = deidentified
                 writer.writerow(row)
                 row_count += 1
 
         print(f"Processed {row_count} rows")
         print(f"Deidentified columns: {', '.join(columns_to_process)}")
         print(f"Precision: {precision}, Fill character: {fill_char}")
+        if redaction_count > 0:
+            print(f"Warning: {redaction_count} ZIP code(s) replaced with '{redaction_value}' (sparsely populated areas, would violate HIPAA Safe Harbor)")
         print(f"Output saved to: {output_file}")
 
 
@@ -178,8 +205,8 @@ Examples:
     parser.add_argument(
         '-p', '--precision',
         choices=['2', '3', 'smart'],
-        default='3',
-        help='Precision level: 2=2-digit, 3=3-digit (default), smart=HIPAA-compliant (3-digit for normal, 2-digit for sparse areas)'
+        default='smart',
+        help='Precision level: smart=HIPAA-compliant (default), 3=3-digit, 2=2-digit. Note: Non-smart modes may redact values that violate HIPAA Safe Harbor.'
     )
     parser.add_argument(
         '-f', '--fill',
@@ -191,6 +218,11 @@ Examples:
         '-d', '--delimiter',
         default=',',
         help='Delimiter character (default: ","): use "," for CSV, "\\t" for TSV, ";" for semicolon-separated, "|" for pipe-separated'
+    )
+    parser.add_argument(
+        '--redaction-value',
+        default='REDACTED_HIPAA',
+        help='Value to use when redacting ZIP codes that would violate HIPAA Safe Harbor (default: "REDACTED_HIPAA")'
     )
 
     args = parser.parse_args()
@@ -220,7 +252,7 @@ Examples:
     # Process the CSV file
     # Pass column arguments as-is; deidentify_csv will handle name vs. index resolution
     try:
-        deidentify_csv(args.input_file, args.output, args.columns, args.precision, args.fill, delimiter)
+        deidentify_csv(args.input_file, args.output, args.columns, args.precision, args.fill, delimiter, args.redaction_value)
     except Exception as e:
         parser.error(f"Error processing CSV: {e}")
 
