@@ -205,7 +205,17 @@ Examples:
         args.output = input_path.parent / f"{input_path.stem}_deidentified{input_path.suffix}"
 
     # Handle special delimiter cases (e.g., '\t' for tab)
-    delimiter = args.delimiter.encode().decode('unicode_escape')
+    # Only decode escape sequences if the string actually contains them
+    delimiter = args.delimiter
+    if '\\' in delimiter and len(delimiter) > 1:
+        try:
+            delimiter = delimiter.encode().decode('unicode_escape')
+        except (UnicodeDecodeError, ValueError) as e:
+            parser.error(f"Invalid delimiter escape sequence '{args.delimiter}': {e}")
+
+    # Validate delimiter is a single character
+    if len(delimiter) != 1:
+        parser.error(f"Delimiter must be a single character, got: '{delimiter}' (length {len(delimiter)})")
 
     # Process the CSV file
     # Pass column arguments as-is; deidentify_csv will handle name vs. index resolution

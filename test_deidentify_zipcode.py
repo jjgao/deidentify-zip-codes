@@ -381,6 +381,29 @@ class TestDelimiters(unittest.TestCase):
         self.assertEqual(rows[0]['zipcode'], '12300')
         self.assertEqual(rows[1]['zipcode'], '90200')
 
+    def test_backslash_delimiter(self):
+        """Test backslash as delimiter (edge case)"""
+        test_input = self.test_dir / 'test_backslash.txt'
+        test_output = self.test_dir / 'test_backslash_out.txt'
+
+        # Create backslash-separated file
+        with open(test_input, 'w', newline='') as f:
+            f.write('id\\name\\zipcode\n')
+            f.write('1\\Alice\\12345\n')
+            f.write('2\\Bob\\90210\n')
+
+        # Use backslash delimiter
+        deidentify_csv(test_input, test_output, ['zipcode'], '3', '0', delimiter='\\')
+
+        with open(test_output, 'r') as f:
+            content = f.read()
+            self.assertIn('\\', content)  # Should use backslashes
+            lines = content.strip().split('\n')
+            row1 = lines[1].split('\\')
+            row2 = lines[2].split('\\')
+            self.assertEqual(row1[2], '12300')
+            self.assertEqual(row2[2], '90200')
+
 
 class TestEdgeCases(unittest.TestCase):
     """Test edge cases and error handling"""
