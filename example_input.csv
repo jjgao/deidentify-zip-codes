@@ -1,0 +1,9 @@
+patient_id,name,home_zipcode,work_zipcode,age
+1001,John Doe,12345,90210,45
+1002,Jane Smith,03601,02101,32
+1003,Bob Johnson,82101,10234,58
+1004,Alice Williams,94102,60601,41
+1005,Charlie Brown,05901,12345-6789,29
+1006,Diana Prince,89301,33101,37
+1007,Eve Davis,10001,78701,51
+1008,Frank Miller,02134,85001,44
