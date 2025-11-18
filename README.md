@@ -173,6 +173,29 @@ optional arguments:
 - Python 3.6 or later
 - No external dependencies (uses only standard library)
 
+## Testing
+
+The project includes comprehensive unit tests covering all functionality.
+
+### Run Tests
+
+```bash
+python3 test_deidentify_zipcode.py
+```
+
+### Test Coverage
+
+The test suite includes 23 tests covering:
+- All precision modes (2-digit, 3-digit, smart)
+- Both fill characters (zeros and X's)
+- All 14 sparsely populated ZIP code prefixes
+- ZIP+4 format handling
+- Edge cases (empty values, leading zeros, whitespace)
+- CSV file processing with single and multiple columns
+- Data integrity and structure preservation
+
+All tests pass successfully.
+
 ## License
 
 This project is released under the MIT License.
