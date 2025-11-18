@@ -24,7 +24,11 @@ python3 --version
 
 ```bash
 # Default mode (smart/HIPAA-compliant precision with zeros)
+# If your CSV has a column named 'zipcode':
 python3 deidentify_zipcode.py input.csv
+
+# If your columns have different names, specify them:
+python3 deidentify_zipcode.py input.csv -c home_zipcode work_zipcode
 ```
 
 This will create `input_deidentified.csv` with ZIP codes converted from `12345` → `12300` (3-digit for normal populations) and `03601` → `03000` (2-digit for sparse populations).
