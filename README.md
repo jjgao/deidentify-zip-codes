@@ -76,6 +76,22 @@ python3 deidentify_zipcode.py input.csv -c 0 3
 python3 deidentify_zipcode.py input.csv -o output.csv
 ```
 
+### Delimiter Options
+
+```bash
+# Tab-separated file (TSV)
+python3 deidentify_zipcode.py data.tsv -d $'\t' -c zipcode
+
+# Semicolon-separated file (common in European locales)
+python3 deidentify_zipcode.py data.csv -d ';' -c zipcode
+
+# Pipe-separated file (common in data warehousing)
+python3 deidentify_zipcode.py data.txt -d '|' -c zipcode
+
+# Custom delimiter
+python3 deidentify_zipcode.py data.txt -d ':' -c zipcode
+```
+
 ### Complete Example
 
 ```bash
@@ -85,6 +101,13 @@ python3 deidentify_zipcode.py patients.csv \
   -p smart \
   -f X \
   -o patients_deidentified.csv
+
+# Tab-separated file with smart mode
+python3 deidentify_zipcode.py patients.tsv \
+  -d $'\t' \
+  -c zipcode \
+  -p smart \
+  -f 0
 ```
 
 ## HIPAA Safe Harbor Compliance
@@ -133,7 +156,7 @@ python3 deidentify_zipcode.py example_input.csv -c home_zipcode work_zipcode -p 
 
 ```
 usage: deidentify_zipcode.py [-h] [-o OUTPUT] [-c COLUMNS [COLUMNS ...]]
-                             [-p {2,3,smart}] [-f {0,X}]
+                             [-p {2,3,smart}] [-f {0,X}] [-d DELIMITER]
                              input_file
 
 positional arguments:
@@ -149,6 +172,9 @@ optional arguments:
                         Precision level: 2=2-digit, 3=3-digit (default), smart=HIPAA-compliant
   -f {0,X}, --fill {0,X}
                         Fill character for replaced digits: 0=zeros (default), X=letter X
+  -d DELIMITER, --delimiter DELIMITER
+                        Delimiter character (default: ","): use "," for CSV, "\t" for TSV,
+                        ";" for semicolon-separated, "|" for pipe-separated
 ```
 
 ## How It Works
@@ -163,10 +189,18 @@ optional arguments:
 
 ## Supported Input Formats
 
+### ZIP Code Formats
 - **5-digit ZIP codes**: `12345`
 - **ZIP+4 format**: `12345-6789` (hyphen and extension removed)
 - **Leading zeros**: `00501` (preserved)
 - **Empty values**: Preserved as-is
+
+### File Formats
+- **CSV** (comma-separated): Default delimiter `,`
+- **TSV** (tab-separated): Use `-d $'\t'`
+- **Semicolon-separated**: Use `-d ';'` (common in European locales)
+- **Pipe-separated**: Use `-d '|'` (common in data warehousing)
+- **Custom delimiters**: Any single character
 
 ## Requirements
 
@@ -185,14 +219,16 @@ python3 test_deidentify_zipcode.py
 
 ### Test Coverage
 
-The test suite includes 23 tests covering:
+The test suite includes 29 tests covering:
 - All precision modes (2-digit, 3-digit, smart)
 - Both fill characters (zeros and X's)
 - All 14 sparsely populated ZIP code prefixes
 - ZIP+4 format handling
+- **Delimiter support** (comma, tab, semicolon, pipe)
 - Edge cases (empty values, leading zeros, whitespace)
 - CSV file processing with single and multiple columns
 - Data integrity and structure preservation
+- Digit-only column names
 
 All tests pass successfully.
 

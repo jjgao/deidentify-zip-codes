@@ -65,7 +65,7 @@ def deidentify_zipcode(zipcode, precision='3', fill_char='0'):
     return kept_digits + (fill_char * fill_count)
 
 
-def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill_char='0'):
+def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill_char='0', delimiter=','):
     """
     Deidentify ZIP codes in a CSV file.
 
@@ -75,9 +75,10 @@ def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill
         zipcode_columns: List of column names or indices containing ZIP codes
         precision: '2', '3', or 'smart' for precision level
         fill_char: '0' or 'X' for fill character
+        delimiter: Delimiter character (default: ',')
     """
     with open(input_file, 'r', newline='', encoding='utf-8') as infile:
-        reader = csv.DictReader(infile)
+        reader = csv.DictReader(infile, delimiter=delimiter)
 
         if not reader.fieldnames:
             raise ValueError("CSV file appears to be empty or malformed")
@@ -112,7 +113,7 @@ def deidentify_csv(input_file, output_file, zipcode_columns, precision='3', fill
         # Stream rows directly to output file to avoid loading all into memory
         row_count = 0
         with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
-            writer = csv.DictWriter(outfile, fieldnames=reader.fieldnames)
+            writer = csv.DictWriter(outfile, fieldnames=reader.fieldnames, delimiter=delimiter)
             writer.writeheader()
 
             for row in reader:
@@ -148,6 +149,15 @@ Examples:
 
   # Multiple columns
   %(prog)s input.csv -c home_zip work_zip billing_zip
+
+  # Tab-separated file (TSV)
+  %(prog)s data.tsv -d $'\\t' -c zipcode
+
+  # Semicolon-separated file
+  %(prog)s data.csv -d ';' -c zipcode
+
+  # Pipe-separated file
+  %(prog)s data.txt -d '|' -c zipcode
         """
     )
     parser.add_argument(
@@ -177,6 +187,11 @@ Examples:
         default='0',
         help='Fill character for replaced digits: 0=zeros (default), X=letter X'
     )
+    parser.add_argument(
+        '-d', '--delimiter',
+        default=',',
+        help='Delimiter character (default: ","): use "," for CSV, "\\t" for TSV, ";" for semicolon-separated, "|" for pipe-separated'
+    )
 
     args = parser.parse_args()
 
@@ -189,10 +204,13 @@ Examples:
         input_path = Path(args.input_file)
         args.output = input_path.parent / f"{input_path.stem}_deidentified{input_path.suffix}"
 
+    # Handle special delimiter cases (e.g., '\t' for tab)
+    delimiter = args.delimiter.encode().decode('unicode_escape')
+
     # Process the CSV file
     # Pass column arguments as-is; deidentify_csv will handle name vs. index resolution
     try:
-        deidentify_csv(args.input_file, args.output, args.columns, args.precision, args.fill)
+        deidentify_csv(args.input_file, args.output, args.columns, args.precision, args.fill, delimiter)
     except Exception as e:
         parser.error(f"Error processing CSV: {e}")
 
