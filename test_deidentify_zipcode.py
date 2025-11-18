@@ -278,6 +278,133 @@ class TestDeidentifyCSV(unittest.TestCase):
         self.assertEqual(rows[0]['work_zip'], '902XX')
 
 
+class TestDelimiters(unittest.TestCase):
+    """Test cases for different delimiter types"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        self.test_dir = Path('test_data')
+        self.test_dir.mkdir(exist_ok=True)
+
+    def tearDown(self):
+        """Clean up test files"""
+        for file in self.test_dir.glob('*'):
+            file.unlink()
+        if self.test_dir.exists():
+            self.test_dir.rmdir()
+
+    def test_tab_delimiter(self):
+        """Test tab-separated files (TSV)"""
+        test_input = self.test_dir / 'test_tab.tsv'
+        test_output = self.test_dir / 'test_tab_out.tsv'
+
+        # Create tab-separated file
+        with open(test_input, 'w', newline='') as f:
+            f.write('id\tname\tzipcode\n')
+            f.write('1\tAlice\t12345\n')
+            f.write('2\tBob\t03601\n')
+
+        deidentify_csv(test_input, test_output, ['zipcode'], '3', '0', delimiter='\t')
+
+        with open(test_output, 'r') as f:
+            content = f.read()
+            self.assertIn('\t', content)  # Should use tabs
+            lines = content.strip().split('\n')
+            row1 = lines[1].split('\t')
+            row2 = lines[2].split('\t')
+            self.assertEqual(row1[2], '12300')
+            self.assertEqual(row2[2], '03600')
+
+    def test_semicolon_delimiter(self):
+        """Test semicolon-separated files"""
+        test_input = self.test_dir / 'test_semi.csv'
+        test_output = self.test_dir / 'test_semi_out.csv'
+
+        # Create semicolon-separated file
+        with open(test_input, 'w', newline='') as f:
+            f.write('id;name;zipcode\n')
+            f.write('1;Alice;12345\n')
+            f.write('2;Bob;90210\n')
+
+        deidentify_csv(test_input, test_output, ['zipcode'], '3', 'X', delimiter=';')
+
+        with open(test_output, 'r') as f:
+            content = f.read()
+            self.assertIn(';', content)  # Should use semicolons
+            lines = content.strip().split('\n')
+            row1 = lines[1].split(';')
+            row2 = lines[2].split(';')
+            self.assertEqual(row1[2], '123XX')
+            self.assertEqual(row2[2], '902XX')
+
+    def test_pipe_delimiter(self):
+        """Test pipe-separated files"""
+        test_input = self.test_dir / 'test_pipe.txt'
+        test_output = self.test_dir / 'test_pipe_out.txt'
+
+        # Create pipe-separated file
+        with open(test_input, 'w', newline='') as f:
+            f.write('id|name|zipcode\n')
+            f.write('1|Alice|12345\n')
+            f.write('2|Bob|82101\n')
+
+        deidentify_csv(test_input, test_output, ['zipcode'], 'smart', '0', delimiter='|')
+
+        with open(test_output, 'r') as f:
+            content = f.read()
+            self.assertIn('|', content)  # Should use pipes
+            lines = content.strip().split('\n')
+            row1 = lines[1].split('|')
+            row2 = lines[2].split('|')
+            self.assertEqual(row1[2], '12300')  # Normal population
+            self.assertEqual(row2[2], '82000')  # Sparse population (821)
+
+    def test_default_comma_delimiter(self):
+        """Test default comma delimiter still works"""
+        test_input = self.test_dir / 'test_comma.csv'
+        test_output = self.test_dir / 'test_comma_out.csv'
+
+        # Create comma-separated file
+        with open(test_input, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['id', 'name', 'zipcode'])
+            writer.writerow(['1', 'Alice', '12345'])
+            writer.writerow(['2', 'Bob', '90210'])
+
+        # Use default delimiter (comma)
+        deidentify_csv(test_input, test_output, ['zipcode'])
+
+        with open(test_output, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        self.assertEqual(rows[0]['zipcode'], '12300')
+        self.assertEqual(rows[1]['zipcode'], '90200')
+
+    def test_backslash_delimiter(self):
+        """Test backslash as delimiter (edge case)"""
+        test_input = self.test_dir / 'test_backslash.txt'
+        test_output = self.test_dir / 'test_backslash_out.txt'
+
+        # Create backslash-separated file
+        with open(test_input, 'w', newline='') as f:
+            f.write('id\\name\\zipcode\n')
+            f.write('1\\Alice\\12345\n')
+            f.write('2\\Bob\\90210\n')
+
+        # Use backslash delimiter
+        deidentify_csv(test_input, test_output, ['zipcode'], '3', '0', delimiter='\\')
+
+        with open(test_output, 'r') as f:
+            content = f.read()
+            self.assertIn('\\', content)  # Should use backslashes
+            lines = content.strip().split('\n')
+            row1 = lines[1].split('\\')
+            row2 = lines[2].split('\\')
+            self.assertEqual(row1[2], '12300')
+            self.assertEqual(row2[2], '90200')
+
+
 class TestEdgeCases(unittest.TestCase):
     """Test edge cases and error handling"""
 
@@ -317,6 +444,7 @@ def run_tests():
 
     suite.addTests(loader.loadTestsFromTestCase(TestDeidentifyZipcode))
     suite.addTests(loader.loadTestsFromTestCase(TestDeidentifyCSV))
+    suite.addTests(loader.loadTestsFromTestCase(TestDelimiters))
     suite.addTests(loader.loadTestsFromTestCase(TestEdgeCases))
 
     runner = unittest.TextTestRunner(verbosity=2)
