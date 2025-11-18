@@ -23,11 +23,11 @@ python3 --version
 ### Basic Usage
 
 ```bash
-# Default mode (3-digit precision with zeros)
+# Default mode (smart/HIPAA-compliant precision with zeros)
 python3 deidentify_zipcode.py input.csv
 ```
 
-This will create `input_deidentified.csv` with ZIP codes converted from `12345` → `12300`.
+This will create `input_deidentified.csv` with ZIP codes converted from `12345` → `12300` (3-digit for normal populations) and `03601` → `03000` (2-digit for sparse populations).
 
 ### Precision Options
 
@@ -36,13 +36,14 @@ This will create `input_deidentified.csv` with ZIP codes converted from `12345` 
 python3 deidentify_zipcode.py input.csv -p 2
 # Result: 12345 → 12000
 
-# 3-digit precision (default)
+# 3-digit precision (may redact sparse areas)
 python3 deidentify_zipcode.py input.csv -p 3
 # Result: 12345 → 12300
+# Note: Sparse ZIPs like 03601 will be replaced with 'REDACTED_HIPAA' to avoid HIPAA violations
 
-# Smart mode (HIPAA-compliant)
+# Smart mode (HIPAA-compliant, default)
 python3 deidentify_zipcode.py input.csv -p smart
-# Result: 12345 → 12300, but 03601 → 03000 (sparse area)
+# Result: 12345 → 12300, but 03601 → 03000 (sparse area automatically gets 2-digit)
 ```
 
 ### Fill Character Options
@@ -90,6 +91,24 @@ python3 deidentify_zipcode.py data.txt -d '|' -c zipcode
 
 # Custom delimiter
 python3 deidentify_zipcode.py data.txt -d ':' -c zipcode
+```
+
+### Redaction Value
+
+When using `-p 3` (fixed 3-digit precision) on sparsely populated ZIP codes, the tool will redact values to prevent HIPAA Safe Harbor violations:
+
+```bash
+# Default redaction value
+python3 deidentify_zipcode.py input.csv -p 3
+# Sparse ZIP 03601 becomes: REDACTED_HIPAA
+
+# Custom redaction value
+python3 deidentify_zipcode.py input.csv -p 3 --redaction-value "[REMOVED]"
+# Sparse ZIP 03601 becomes: [REMOVED]
+
+# Smart mode never redacts (adjusts precision instead)
+python3 deidentify_zipcode.py input.csv -p smart
+# Sparse ZIP 03601 becomes: 03000
 ```
 
 ### Complete Example
@@ -157,6 +176,7 @@ python3 deidentify_zipcode.py example_input.csv -c home_zipcode work_zipcode -p 
 ```
 usage: deidentify_zipcode.py [-h] [-o OUTPUT] [-c COLUMNS [COLUMNS ...]]
                              [-p {2,3,smart}] [-f {0,X}] [-d DELIMITER]
+                             [--redaction-value REDACTION_VALUE]
                              input_file
 
 positional arguments:
@@ -169,12 +189,16 @@ optional arguments:
   -c COLUMNS [COLUMNS ...], --columns COLUMNS [COLUMNS ...]
                         Column names or indices containing ZIP codes (default: "zipcode")
   -p {2,3,smart}, --precision {2,3,smart}
-                        Precision level: 2=2-digit, 3=3-digit (default), smart=HIPAA-compliant
+                        Precision level: smart=HIPAA-compliant (default), 3=3-digit, 2=2-digit.
+                        Note: Non-smart modes may redact values that violate HIPAA Safe Harbor.
   -f {0,X}, --fill {0,X}
                         Fill character for replaced digits: 0=zeros (default), X=letter X
   -d DELIMITER, --delimiter DELIMITER
                         Delimiter character (default: ","): use "," for CSV, "\t" for TSV,
                         ";" for semicolon-separated, "|" for pipe-separated
+  --redaction-value REDACTION_VALUE
+                        Value to use when redacting ZIP codes that would violate HIPAA Safe Harbor
+                        (default: "REDACTED_HIPAA")
 ```
 
 ## How It Works
@@ -219,12 +243,14 @@ python3 test_deidentify_zipcode.py
 
 ### Test Coverage
 
-The test suite includes 29 tests covering:
+The test suite includes 35 tests covering:
 - All precision modes (2-digit, 3-digit, smart)
 - Both fill characters (zeros and X's)
 - All 14 sparsely populated ZIP code prefixes
 - ZIP+4 format handling
 - **Delimiter support** (comma, tab, semicolon, pipe)
+- **Redaction behavior** for HIPAA Safe Harbor violations
+- Custom redaction values
 - Edge cases (empty values, leading zeros, whitespace)
 - CSV file processing with single and multiple columns
 - Data integrity and structure preservation

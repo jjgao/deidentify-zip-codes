@@ -152,22 +152,23 @@ class TestDeidentifyCSV(unittest.TestCase):
             self.test_dir.rmdir()
 
     def test_csv_single_column_default(self):
-        """Test CSV processing with single column and default settings"""
+        """Test CSV processing with single column and default settings (smart mode)"""
         deidentify_csv(self.test_input, self.test_output, ['zipcode'])
 
         with open(self.test_output, 'r') as f:
             reader = csv.DictReader(f)
             rows = list(reader)
 
-        self.assertEqual(rows[0]['zipcode'], '12300')
-        self.assertEqual(rows[1]['zipcode'], '03600')
-        self.assertEqual(rows[2]['zipcode'], '94100')
+        # Default is now smart mode
+        self.assertEqual(rows[0]['zipcode'], '12300')  # Normal population: 3-digit
+        self.assertEqual(rows[1]['zipcode'], '03000')  # Sparse population (036): 2-digit
+        self.assertEqual(rows[2]['zipcode'], '94100')  # Normal population: 3-digit
 
         # Work_zip should be unchanged
         self.assertEqual(rows[0]['work_zip'], '90210')
 
     def test_csv_multiple_columns(self):
-        """Test CSV processing with multiple columns"""
+        """Test CSV processing with multiple columns (-p 3 with redaction)"""
         deidentify_csv(self.test_input, self.test_output,
                       ['zipcode', 'work_zip'], '3', 'X')
 
@@ -175,10 +176,12 @@ class TestDeidentifyCSV(unittest.TestCase):
             reader = csv.DictReader(f)
             rows = list(reader)
 
+        # Normal population ZIPs work with -p 3
         self.assertEqual(rows[0]['zipcode'], '123XX')
         self.assertEqual(rows[0]['work_zip'], '902XX')
-        self.assertEqual(rows[1]['zipcode'], '036XX')
-        self.assertEqual(rows[1]['work_zip'], '821XX')
+        # Sparse population ZIPs are redacted with -p 3
+        self.assertEqual(rows[1]['zipcode'], 'REDACTED_HIPAA')  # 036 is sparse
+        self.assertEqual(rows[1]['work_zip'], 'REDACTED_HIPAA')  # 821 is sparse
 
     def test_csv_smart_mode(self):
         """Test CSV processing with smart mode"""
@@ -257,8 +260,9 @@ class TestDeidentifyCSV(unittest.TestCase):
 
         self.assertEqual(rows[0]['2023'], '12300')
         self.assertEqual(rows[0]['2024'], '90200')
-        self.assertEqual(rows[1]['2023'], '03600')
-        self.assertEqual(rows[1]['2024'], '82100')
+        # Sparse ZIPs are redacted with -p 3
+        self.assertEqual(rows[1]['2023'], 'REDACTED_HIPAA')  # 036 is sparse
+        self.assertEqual(rows[1]['2024'], 'REDACTED_HIPAA')  # 821 is sparse
 
         # Clean up
         test_file.unlink()
@@ -313,7 +317,7 @@ class TestDelimiters(unittest.TestCase):
             row1 = lines[1].split('\t')
             row2 = lines[2].split('\t')
             self.assertEqual(row1[2], '12300')
-            self.assertEqual(row2[2], '03600')
+            self.assertEqual(row2[2], 'REDACTED_HIPAA')  # 036 is sparse with -p 3
 
     def test_semicolon_delimiter(self):
         """Test semicolon-separated files"""
@@ -405,6 +409,42 @@ class TestDelimiters(unittest.TestCase):
             self.assertEqual(row2[2], '90200')
 
 
+class TestRedaction(unittest.TestCase):
+    """Test cases for HIPAA Safe Harbor redaction"""
+
+    def test_redaction_with_p3_sparse_zip(self):
+        """Test that -p 3 redacts sparse ZIP codes"""
+        # Sparse ZIP codes should be redacted with -p 3
+        self.assertEqual(deidentify_zipcode('03601', '3', '0'), 'REDACTED_HIPAA')
+        self.assertEqual(deidentify_zipcode('05901', '3', '0'), 'REDACTED_HIPAA')
+        self.assertEqual(deidentify_zipcode('82101', '3', '0'), 'REDACTED_HIPAA')
+        self.assertEqual(deidentify_zipcode('89301', '3', 'X'), 'REDACTED_HIPAA')
+
+    def test_no_redaction_with_p3_normal_zip(self):
+        """Test that -p 3 does NOT redact normal ZIP codes"""
+        # Normal ZIP codes should work fine with -p 3
+        self.assertEqual(deidentify_zipcode('12345', '3', '0'), '12300')
+        self.assertEqual(deidentify_zipcode('90210', '3', 'X'), '902XX')
+
+    def test_redaction_with_custom_value(self):
+        """Test custom redaction values"""
+        self.assertEqual(deidentify_zipcode('03601', '3', '0', '[REMOVED]'), '[REMOVED]')
+        self.assertEqual(deidentify_zipcode('82101', '3', 'X', '***'), '***')
+
+    def test_no_redaction_with_p2(self):
+        """Test that -p 2 does NOT redact (2-digit is considered safe)"""
+        # 2-digit precision is currently allowed even for sparse ZIPs
+        self.assertEqual(deidentify_zipcode('03601', '2', '0'), '03000')
+        self.assertEqual(deidentify_zipcode('82101', '2', 'X'), '82XXX')
+
+    def test_smart_mode_no_redaction(self):
+        """Test that smart mode never redacts (it adjusts precision instead)"""
+        # Smart mode should adjust precision, not redact
+        self.assertEqual(deidentify_zipcode('03601', 'smart', '0'), '03000')
+        self.assertEqual(deidentify_zipcode('82101', 'smart', 'X'), '82XXX')
+        self.assertEqual(deidentify_zipcode('12345', 'smart', '0'), '12300')
+
+
 class TestEdgeCases(unittest.TestCase):
     """Test edge cases and error handling"""
 
@@ -445,6 +485,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestDeidentifyZipcode))
     suite.addTests(loader.loadTestsFromTestCase(TestDeidentifyCSV))
     suite.addTests(loader.loadTestsFromTestCase(TestDelimiters))
+    suite.addTests(loader.loadTestsFromTestCase(TestRedaction))
     suite.addTests(loader.loadTestsFromTestCase(TestEdgeCases))
 
     runner = unittest.TextTestRunner(verbosity=2)
